@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Dream Team</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;}
+canvas{display:block;}
+
+/* ── Aliens slide-out panel ── */
+#aliens-panel{
+  position:fixed;right:-272px;top:50%;transform:translateY(-50%);
+  width:272px;max-height:90vh;
+  background:#080818;border:2px solid #FF2244;border-right:none;border-radius:6px 0 0 6px;
+  transition:right 0.28s cubic-bezier(.4,0,.2,1);
+  z-index:200;display:flex;flex-direction:column;
+  box-shadow:-4px 0 24px rgba(255,34,68,0.3);
+}
+#aliens-panel.open{right:0;}
+#aliens-tab{
+  position:absolute;left:-34px;top:50%;
+  transform:translateY(-50%) rotate(180deg);
+  writing-mode:vertical-rl;
+  background:#FF2244;color:#fff;
+  font:bold 11px monospace;letter-spacing:2px;
+  padding:14px 8px;cursor:pointer;
+  border-radius:0 6px 6px 0;
+  box-shadow:-3px 0 10px rgba(255,34,68,0.5);
+  user-select:none;
+}
+#aliens-tab:hover{background:#ff4466;}
+#aliens-header{
+  padding:10px 14px 8px;border-bottom:1px solid #331122;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;
+}
+#team-name-input{
+  flex:1;background:transparent;border:none;border-bottom:1px solid #551122;
+  color:#FF2244;font:bold 13px monospace;letter-spacing:1px;
+  outline:none;text-transform:uppercase;padding:2px 0;min-width:0;
+}
+#team-name-input:focus{border-bottom-color:#FF2244;}
+#alien-count-badge{
+  font:bold 10px monospace;background:#1a0a0a;border:1px solid #FF2244;
+  color:#FF2244;padding:2px 7px;border-radius:10px;
+}
+#name-list{
+  overflow-y:auto;flex:1;padding:8px 10px;
+  scrollbar-width:thin;scrollbar-color:#331122 #080818;
+}
+.name-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.name-row input{
+  flex:1;background:#0f0f22;border:1px solid #332244;color:#fff;
+  font:bold 10px monospace;padding:5px 8px;border-radius:3px;
+  outline:none;text-transform:uppercase;
+}
+.name-row input:focus{border-color:#FF2244;box-shadow:0 0 6px rgba(255,34,68,0.3);}
+.name-row .del-btn{
+  background:#1a0a0a;border:1px solid #551122;color:#FF4466;
+  font:bold 11px monospace;width:24px;height:24px;
+  border-radius:3px;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.name-row .del-btn:hover{background:#330011;border-color:#FF2244;}
+#add-area{
+  padding:8px 10px 6px;border-top:1px solid #331122;
+  display:flex;gap:6px;flex-shrink:0;
+}
+#new-name{
+  flex:1;background:#0f0f22;border:1px solid #332244;color:#fff;
+  font:bold 10px monospace;padding:5px 8px;border-radius:3px;
+  outline:none;text-transform:uppercase;
+}
+#new-name:focus{border-color:#FF2244;}
+#add-btn{
+  background:#FF2244;border:none;color:#fff;
+  font:bold 10px monospace;padding:5px 10px;
+  border-radius:3px;cursor:pointer;flex-shrink:0;letter-spacing:1px;
+}
+#add-btn:hover{background:#ff4466;}
+#save-area{padding:6px 10px 10px;flex-shrink:0;}
+#save-btn{
+  width:100%;background:#0f2a18;border:1px solid #00AA44;color:#00DD55;
+  font:bold 11px monospace;padding:9px;border-radius:3px;
+  cursor:pointer;letter-spacing:2px;transition:background 0.15s;
+}
+#save-btn:hover{background:#1a3a24;}
+#panel-note{
+  padding:0 12px 8px;font:9px monospace;text-align:center;flex-shrink:0;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- ── Aliens panel ── -->
+<div id="aliens-panel">
+  <div id="aliens-tab" onclick="togglePanel()">ALIENS</div>
+  <div id="aliens-header">
+    <input id="team-name-input" type="text" maxlength="24" placeholder="TEAM NAME..."
+           onchange="updateTeamName(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+    <span id="alien-count-badge">12</span>
+  </div>
+  <div id="name-list"></div>
+  <div id="add-area">
+    <input id="new-name" type="text" placeholder="NEW NAME..." maxlength="14"
+           onkeydown="if(event.key==='Enter')addAlienName()">
+    <button id="add-btn" onclick="addAlienName()">+ ADD</button>
+  </div>
+  <div id="save-area">
+    <button id="save-btn" onclick="saveTeam()">SAVE &amp; RESTART</button>
+  </div>
+  <div id="panel-note"></div>
+</div>
+
+<script>
+'use strict';
+
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+const W = 700, H = 580;
+C.width = W; C.height = H;
+
+// ── team (restore from localStorage if available) ─────────────────
+let TEAM = ['Chris','Bob','Steve','Claire','Lucy'];
+let teamName = 'THE DREAM TEAM';
+try{
+  const s=localStorage.getItem('sdt_team'); if(s){const p=JSON.parse(s);if(Array.isArray(p)&&p.length)TEAM=p;}
+  const tn=localStorage.getItem('sdt_name'); if(tn) teamName=tn;
+}catch(e){}
+
+// ── helpers ─────────────────────────────────────────────────────
+const rnd  = (a,b) => Math.random()*(b-a)+a;
+const rndI = (a,b) => 0|rnd(a,b+1);
+const lerp = (a,b,t) => a+(b-a)*t;
+const clamp= (v,a,b) => Math.max(a,Math.min(b,v));
+function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=rndI(0,i);[b[i],b[j]]=[b[j],b[i]];}return b;}
+function ease(t){return t<0.5?2*t*t:1-2*(1-t)*(1-t);}
+function qbez(x0,y0,x1,y1,x2,y2,t){const m=1-t;return{x:m*m*x0+2*m*t*x1+t*t*x2,y:m*m*y0+2*m*t*y1+t*t*y2};}
+
+// ── AUDIO ────────────────────────────────────────────────────────
+let AC=null, bgHandle=null;
+function initAudio(){ if(AC)return; AC=new(window.AudioContext||window.webkitAudioContext)(); }
+function osc(type,freq,start,dur,vol=0.2,freqEnd=null){
+  if(!AC)return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.connect(g);g.connect(AC.destination);o.type=type;
+  o.frequency.setValueAtTime(freq,start);
+  if(freqEnd)o.frequency.exponentialRampToValueAtTime(freqEnd,start+dur);
+  g.gain.setValueAtTime(0,start);g.gain.linearRampToValueAtTime(vol,start+0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+  o.start(start);o.stop(start+dur+0.02);
+}
+function noiseBlast(start,dur,vol=0.3,fc=500,Q=1){
+  if(!AC)return;
+  const len=(AC.sampleRate*dur)|0,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+  const src=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+  src.buffer=buf;src.connect(f);f.connect(g);g.connect(AC.destination);
+  f.type='bandpass';f.frequency.value=fc;f.Q.value=Q;
+  g.gain.setValueAtTime(vol,start);g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+  src.start(start);src.stop(start+dur+0.02);
+}
+function sfxShoot(){if(!AC)return;const t=AC.currentTime;osc('square',680,t,0.13,0.18,120);}
+function sfxBombDrop(){if(!AC)return;const t=AC.currentTime;osc('triangle',320,t,0.2,0.1,70);}
+function sfxAlienDie(){if(!AC)return;const t=AC.currentTime;noiseBlast(t,0.22,0.35,900,0.7);osc('sawtooth',380,t,0.22,0.12,40);}
+function sfxShipHit(){if(!AC)return;const t=AC.currentTime;noiseBlast(t,0.45,0.42,380,0.7);osc('sawtooth',200,t,0.45,0.22,35);}
+function sfxRespawn(){if(!AC)return;const t=AC.currentTime;[330,440,550].forEach((f,i)=>osc('triangle',f,t+i*0.07,0.2,0.15));}
+function sfxShipExplode(){if(!AC)return;const t=AC.currentTime;noiseBlast(t,0.9,0.5,280,0.5);noiseBlast(t+0.1,0.7,0.38,130,0.3);noiseBlast(t+0.35,0.55,0.28,70,0.2);osc('sawtooth',140,t,1.1,0.3,18);}
+function sfxWinnerReveal(){if(!AC)return;const t=AC.currentTime;[392,523,659,784,1047].forEach((f,i)=>{osc('square',f,t+i*0.13,0.28,0.22);osc('triangle',f*1.5,t+i*0.13,0.28,0.08);});}
+function sfxWinnerDive(){
+  if(!AC)return;const t=AC.currentTime;
+  const o=AC.createOscillator(),lfo=AC.createOscillator(),lfoG=AC.createGain(),g=AC.createGain();
+  lfo.connect(lfoG);lfoG.connect(o.frequency);o.connect(g);g.connect(AC.destination);
+  lfo.frequency.value=10;lfoG.gain.value=60;o.type='square';
+  o.frequency.setValueAtTime(440,t);o.frequency.exponentialRampToValueAtTime(80,t+2.0);
+  g.gain.setValueAtTime(0.22,t);g.gain.exponentialRampToValueAtTime(0.0001,t+2.0);
+  lfo.start(t);o.start(t);lfo.stop(t+2.1);o.stop(t+2.1);
+}
+function sfxWinnerBomb(){if(!AC)return;const t=AC.currentTime;osc('square',880,t,0.08,0.25,220);noiseBlast(t,0.08,0.12,1200,2);}
+function sfxFanfare(){
+  if(!AC)return;stopBgRhythm();const t=AC.currentTime+0.1;
+  const mel=[[523,0.1],[523,0.1],[523,0.1],[659,0.35],[523,0.1],[659,0.35],[784,0.55]];
+  let off=0;mel.forEach(([f,d])=>{osc('square',f,t+off,d*0.85,0.28);off+=d;});
+  const low=[[262,0.1],[262,0.1],[262,0.1],[330,0.35],[262,0.1],[330,0.35],[392,0.55]];
+  off=0;low.forEach(([f,d])=>{osc('triangle',f,t+off,d*0.85,0.12);off+=d;});
+  const endT=t+off+0.1;[392,523,659,784].forEach((f,i)=>osc('square',f,endT+i*0.06,1.2,0.18));
+}
+
+const BG_SEQ=[110,0,146,0,110,0,164,0];
+let bgStep=0;
+function stopBgRhythm(){if(bgHandle){clearTimeout(bgHandle);bgHandle=null;}}
+function startBgRhythm(){
+  if(!AC)return;stopBgRhythm();bgStep=0;
+  function tick(){
+    if(state==='end'||state==='title'){stopBgRhythm();return;}
+    const total=aliens?aliens.length:12,alive=aliens?aliens.filter(a=>a.alive).length:total;
+    const tempo=Math.max(60,280-(total-alive)*Math.round(220/Math.max(total,1)));
+    const f=BG_SEQ[bgStep%BG_SEQ.length];
+    if(f)osc('square',f,AC.currentTime,0.07,0.22);
+    bgStep++;bgHandle=setTimeout(tick,tempo);
+  }
+  tick();
+}
+
+// ── pixel sprites ────────────────────────────────────────────────
+const PS=4;
+const SPR_BEE=[[0,0,0,1,1,0,0,0],[0,1,1,1,1,1,1,0],[1,1,3,1,1,3,1,1],[0,1,2,1,1,2,1,0],[0,1,1,1,1,1,1,0],[0,1,0,0,0,0,1,0]];
+const SPR_BUTTER=[[1,0,0,1,1,0,0,1],[1,1,1,1,1,1,1,1],[1,3,1,1,1,1,3,1],[1,1,2,1,1,2,1,1],[0,1,1,1,1,1,1,0],[0,0,1,0,0,1,0,0]];
+const SPR_FLAG=[[0,0,1,1,1,1,0,0],[0,1,2,2,2,2,1,0],[1,2,3,1,1,3,2,1],[1,1,2,1,1,2,1,1],[0,1,1,2,2,1,1,0],[0,0,1,1,1,1,0,0],[0,1,0,0,0,0,1,0]];
+const SPR_SHIP=[
+  [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,1,1,0,0,0,0,0,0],
+  [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0],
+  [0,0,3,0,0,1,1,1,1,1,0,0,3,0,0],
+  [0,0,3,0,1,1,1,3,1,1,1,0,3,0,0],
+  [0,0,3,2,1,1,1,1,1,1,1,2,3,0,0],
+  [3,0,1,1,1,1,1,1,1,1,1,1,1,0,3],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,0,1,1,0,0,1,0,0,1,1,0,1,1],
+  [0,3,0,0,3,0,0,0,0,0,3,0,0,3,0],
+  [0,3,0,0,3,0,0,0,0,0,3,0,0,3,0],
+];
+const PAL_BEE   =[null,'#2255EE','#4499FF','#FFFF44'];
+const PAL_BUTTER=[null,'#CC1133','#FF7744','#FFFFFF'];
+const PAL_FLAG  =[null,'#6622BB','#44DDAA','#FFE866'];
+const PAL_SHIP  =[null,'#DDEEFF','#2255DD','#CC2211'];
+const ROW_SPR=[SPR_FLAG,SPR_BUTTER,SPR_BEE];
+const ROW_PAL=[PAL_FLAG,PAL_BUTTER,PAL_BEE];
+const ROW_PTS=[150,80,50];
+
+function sprW(s){return s[0].length*PS;}
+function sprH(s){return s.length*PS;}
+function drawSpr(pix,pal,cx,cy){
+  const ox=(cx-sprW(pix)/2)|0,oy=(cy-sprH(pix)/2)|0;
+  for(let r=0;r<pix.length;r++)for(let c=0;c<pix[r].length;c++){
+    const v=pix[r][c];if(!v)continue;ctx.fillStyle=pal[v];ctx.fillRect(ox+c*PS,oy+r*PS,PS,PS);
+  }
+}
+function drawSprSmall(pix,pal,cx,cy){
+  const sp=2,ox=(cx-pix[0].length*sp/2)|0,oy=(cy-pix.length*sp/2)|0;
+  for(let r=0;r<pix.length;r++)for(let c=0;c<pix[r].length;c++){
+    const v=pix[r][c];if(!v)continue;ctx.fillStyle=pal[v];ctx.fillRect(ox+c*sp,oy+r*sp,sp,sp);
+  }
+}
+
+// ── stars ────────────────────────────────────────────────────────
+const STARS=Array.from({length:120},()=>({x:rnd(0,W),y:rnd(0,H),r:rnd(0.5,2.5),t:rnd(0,6.28)}));
+
+// ── layout constants ─────────────────────────────────────────────
+const DX=88, DY=68, FMY0=85;
+
+// ── game state ───────────────────────────────────────────────────
+let aliens=[],ship={alive:false,exploding:false},bullets=[],bombs=[],sparks=[];
+let fmOffset=0,fmDir=1,fmDrop=0,fmEdgeHit=false;
+let killPtr=0,nextKill=0,score=0;
+let state='title',stateT=0,frame=0,time=0;
+let winner=null,shipTargetX=0,shipVX=0,bombTimer=80,diveTimer=0;
+let shipLives=2;
+let civilWarTimer=0,civilWarKillInterval=1.2,civilWarDone=false;
+
+// ── dynamic layout ───────────────────────────────────────────────
+function buildRowCounts(n){
+  if(n<=0)return[];
+  let nr=n<=4?1:n<=8?2:n<=15?3:n<=20?4:5;
+  while(Math.ceil(n/nr)>5&&nr<8)nr++;
+  return Array.from({length:nr},(_,r)=>Math.floor(n/nr)+(r<n%nr?1:0));
+}
+function rowBaseX(c,rc){return W/2+(c-(rc-1)/2)*DX;}
+function makeRibbon(r){
+  const p=r%3,delay=0.1+r*0.12;
+  if(p===0)return{ex:-90,      ey:H*0.38,mx:W*0.2, my:-70,  rd:delay,co:1 };
+  if(p===1)return{ex:W+90,     ey:H*0.38,mx:W*0.8, my:-70,  rd:delay,co:-1};
+  return          {ex:W*0.5,   ey:-90,   mx:W*0.2, my:H*0.35,rd:delay,co:1 };
+}
+
+function getTarget(){
+  const alive=aliens.filter(a=>a.alive);
+  if(alive.length<=1)return null; // last one standing — don't shoot
+  if(alive.length===2)return alive.reduce((b,a)=>Math.abs(a.x-ship.x)<Math.abs(b.x-ship.x)?a:b);
+  return alive.reduce((b,a)=>Math.hypot(a.x-ship.x,a.y-ship.y)<Math.hypot(b.x-ship.x,b.y-ship.y)?a:b);
+}
+
+// ── initGame ─────────────────────────────────────────────────────
+function initGame(){
+  const n=Math.max(1,TEAM.length);
+  const rowCounts=buildRowCounts(n);
+  const numRows=rowCounts.length;
+  const names=shuffle([...TEAM]);
+  const fmy0=FMY0;
+  aliens=[];
+  let idx=0;
+  for(let r=0;r<numRows;r++){
+    const rc=rowCounts[r];
+    const rb=makeRibbon(r);
+    for(let c=0;c<rc;c++){
+      const bx=rowBaseX(c,rc);
+      const by=fmy0+r*DY;
+      const colOrd=rb.co===1?c:(rc-1-c);
+      const iDelay=rb.rd+colOrd*0.13;
+      aliens.push({
+        idx,name:names[idx%names.length],row:r,col:c,rowCols:rc,
+        x:rb.ex,y:rb.ey,
+        baseX:bx,baseY:by,
+        hx:bx,hy:by,
+        alive:true,
+        spr:ROW_SPR[r%3],pal:ROW_PAL[r%3],pts:ROW_PTS[r%3],
+        wing:0,wingT:0,
+        winner:false,
+        dvx:0,dvy:0,diving:false,divePhase:0,diveT:0,diveFired:false,
+        dbx0:0,dby0:0,dbx1:0,dby1:0,
+        ibx0:rb.ex,iby0:rb.ey,ibx1:rb.mx,iby1:rb.my,
+        iDelay,iDur:0.9,introDone:false,
+      });
+      idx++;
+    }
+  }
+  winner=null;
+  ship={x:W/2,y:H-72,alive:true,exploding:false,explodeT:0,invulnerable:false,invulnerableT:0};
+  shipTargetX=W/2;shipVX=0;shipLives=2;
+  bullets=[];bombs=[];sparks=[];
+  fmOffset=0;fmDir=1;fmDrop=0;fmEdgeHit=false;bombTimer=80;diveTimer=rnd(5,8);
+  killPtr=0;nextKill=0;score=0;
+  civilWarTimer=0;civilWarKillInterval=1.2;civilWarDone=false;
+  state='intro';stateT=0;frame=0;time=0;
+  startBgRhythm();
+}
+
+// ── particles ────────────────────────────────────────────────────
+function boom(x,y,col,n,spd){for(let i=0;i<n;i++){const a=rnd(0,Math.PI*2),s=rnd(0.5,spd);sparks.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,col,life:1,fade:rnd(0.015,0.04),sz:rnd(2,5)});}}
+function bigBoom(x,y){boom(x,y,'#FF8800',35,9);boom(x,y,'#FFFF00',25,6);boom(x,y,'#FF4400',20,11);boom(x,y,'#fff',12,7);}
+function alienBoom(x,y,col){boom(x,y,col,20,5);boom(x,y,'#fff',8,3);}
+function hitBoom(x,y){boom(x,y,'#AADDFF',14,4);boom(x,y,'#fff',6,3);}
+
+// ── formation ────────────────────────────────────────────────────
+function updateFormation(dt,spd){
+  const inFm=aliens.filter(a=>a.alive&&!a.diving);
+  if(!inFm.length)return;
+  fmOffset+=fmDir*spd*dt;
+  const lx=Math.min(...inFm.map(a=>a.baseX+fmOffset));
+  const rx=Math.max(...inFm.map(a=>a.baseX+fmOffset));
+  const atEdge=rx+50>W-10||lx-50<10;
+  if(atEdge&&!fmEdgeHit){fmDir*=-1;fmDrop=Math.min(fmDrop+DY,200);fmEdgeHit=true;}
+  else if(!atEdge){fmEdgeHit=false;}
+  for(const a of inFm){a.hx=a.baseX+fmOffset;a.hy=a.baseY+fmDrop;a.x=lerp(a.x,a.hx,0.1);a.y=lerp(a.y,a.hy,0.1);}
+}
+
+// ── ship AI ──────────────────────────────────────────────────────
+function updateShipAI(){
+  if(!ship.alive||ship.exploding)return;
+  const overdue=state==='playing'&&time>nextKill+0.15;
+  const dodgeRadius=overdue?40:80;
+  const threats=bombs.filter(b=>!b.civil&&b.vy>0&&Math.abs(b.x-ship.x)<dodgeRadius&&b.y>ship.y-180&&b.y<ship.y+10);
+  let desired;
+  if(threats.length>0){
+    const t=threats.reduce((a,b)=>b.y>a.y?b:a);
+    desired=clamp(t.x+(t.x<ship.x?1:-1)*110,40,W-40);
+  } else if(state==='playing'){
+    const nxt=getTarget();desired=nxt?nxt.x:W/2;
+  } else if(state==='attack'){
+    if(frame%50===0)shipTargetX=rnd(55,W-55);desired=shipTargetX;
+  } else desired=W/2;
+  const dx=desired-ship.x;
+  ship.x=clamp(Math.abs(dx)<10?desired:ship.x+Math.sign(dx)*10,36,W-36);
+  shipVX=desired-ship.x;
+}
+
+// ── intimidation dives ───────────────────────────────────────────
+function startIntimidationDive(a){
+  a.diving=true;a.divePhase=0;a.diveT=0;a.diveFired=false;
+  a.dbx0=a.x;a.dby0=a.y;a.dbx1=ship.x+rnd(-60,60);a.dby1=H*0.7+rnd(-40,40);
+}
+function updateIntimidationDive(a,dt){
+  a.diveT+=dt;
+  if(a.divePhase===0){
+    const t=clamp(a.diveT/1.3,0,1),te=ease(t);
+    const p=qbez(a.dbx0,a.dby0,a.dbx1,a.dby1,a.dbx0+rnd(-30,30),a.dby0,te);
+    a.x=p.x;a.y=p.y;
+    if(!a.diveFired&&t>0.45){
+      const dx=ship.x-a.x,dy=ship.y-a.y,len=Math.hypot(dx,dy);
+      bombs.push({x:a.x,y:a.y,vx:dx/len*2.5,vy:5,winner:false,civil:false});
+      sfxBombDrop();a.diveFired=true;
+    }
+    if(t>=1){a.divePhase=1;a.diveT=0;}
+  } else {
+    const t=clamp(a.diveT/0.9,0,1),te=ease(t);
+    a.x=lerp(a.x,a.hx,te*0.15);a.y=lerp(a.y,a.hy,te*0.15);
+    if(t>=1||Math.hypot(a.x-a.hx,a.y-a.hy)<4){a.x=a.hx;a.y=a.hy;a.diving=false;}
+  }
+}
+
+// ── update ───────────────────────────────────────────────────────
+function update(dt){
+  time+=dt;stateT+=dt;frame++;
+  for(let i=sparks.length-1;i>=0;i--){const s=sparks[i];s.x+=s.vx;s.y+=s.vy;s.vy+=0.1;s.life-=s.fade;if(s.life<=0)sparks.splice(i,1);}
+  if(state==='title'||state==='end')return;
+  if(ship.invulnerable){ship.invulnerableT+=dt;if(ship.invulnerableT>2.0)ship.invulnerable=false;}
+
+  // intro
+  if(state==='intro'){
+    for(const a of aliens){
+      if(a.introDone)continue;
+      const t=clamp((stateT-a.iDelay)/a.iDur,0,1),te=ease(t);
+      const p=qbez(a.ibx0,a.iby0,a.ibx1,a.iby1,a.hx,a.hy,te);
+      a.x=p.x;a.y=p.y;a.wingT+=dt;if(a.wingT>0.3){a.wing^=1;a.wingT=0;}
+      if(t>=1){a.introDone=true;a.x=a.hx;a.y=a.hy;}
+    }
+    if(!aliens.some(a=>!a.introDone)){state='playing';stateT=0;nextKill=time+0.6;}
+    return;
+  }
+
+  for(const a of aliens)if(a.alive){a.wingT+=dt;if(a.wingT>0.3){a.wing^=1;a.wingT=0;}}
+
+  // civil war
+  if(state==='civil_war'){
+    const n=aliens.filter(a=>a.alive).length;
+    updateFormation(dt,30+(aliens.length-n)*6);
+    bombTimer--;
+    if(bombTimer<=0){
+      const alive=aliens.filter(a=>a.alive);
+      if(alive.length>=2){
+        const shooter=alive[rndI(0,alive.length-1)];
+        const targets=alive.filter(a=>a!==shooter);
+        const target=targets[rndI(0,targets.length-1)];
+        const dx=target.x-shooter.x,dy=target.y-shooter.y,len=Math.hypot(dx,dy);
+        bombs.push({x:shooter.x,y:shooter.y,vx:dx/len*5,vy:dy/len*5,winner:false,civil:true});
+        sfxBombDrop();
+      }
+      bombTimer=rndI(18,32);
+    }
+    for(let i=bombs.length-1;i>=0;i--){
+      const b=bombs[i];b.x+=b.vx;b.y+=b.vy;
+      if(b.x<-30||b.x>W+30||b.y<-30||b.y>H+30){bombs.splice(i,1);continue;}
+      if(b.civil){
+        let hit=false;
+        for(const a of aliens){if(!a.alive)continue;if(Math.abs(b.x-a.x)<18&&Math.abs(b.y-a.y)<16){a.alive=false;alienBoom(a.x,a.y,a.pal[1]);sfxAlienDie();bombs.splice(i,1);hit=true;break;}}
+        if(hit)continue;
+      } else if(b.y>H+20)bombs.splice(i,1);
+    }
+    if(!civilWarDone){
+      const alive=aliens.filter(a=>a.alive);
+      if(alive.length<=1){
+        civilWarDone=true;
+        winner=alive[0]||(aliens.find(a=>a.alive)||aliens[rndI(0,aliens.length-1)]);
+        winner.alive=true;winner.winner=true;
+        sfxWinnerReveal();setTimeout(()=>{state='end';stateT=0;sfxFanfare();},2200);
+      }
+    }
+    if(ship.exploding)ship.explodeT+=dt;
+    return;
+  }
+
+  // intimidation dives
+  if(state==='playing'){
+    diveTimer-=dt;
+    if(diveTimer<=0){
+      const candidates=aliens.filter(a=>a.alive&&!a.diving);
+      if(candidates.length>1)startIntimidationDive(candidates[rndI(0,candidates.length-1)]);
+      diveTimer=rnd(4,8);
+    }
+    for(const a of aliens)if(a.alive&&a.diving)updateIntimidationDive(a,dt);
+  }
+
+  const n=aliens.filter(a=>a.alive).length;
+  updateFormation(dt,22+(aliens.length-n)*5);
+  updateShipAI();
+
+  // alien bombing — only in playing (last state skips so winner can't kill ship before dive)
+  if(state==='playing'){
+    bombTimer--;
+    if(bombTimer<=0){
+      const totalAlive=aliens.filter(a=>a.alive).length;
+      const shooters=aliens.filter(a=>a.alive&&!a.diving);
+      const aliveN=shooters.length;
+      if(aliveN>0){
+        const toFire=aliveN<=2?shooters:shooters.sort(()=>Math.random()-0.5).slice(0,aliveN<=4?2:1);
+        const bombSpd=4.5+(aliens.length-totalAlive)*0.28;
+        const bombVX=1.5+(aliens.length-totalAlive)*0.18;
+        for(const s of toFire){
+          const dx=ship.x-s.x,dy=ship.y-s.y,len=Math.hypot(dx,dy);
+          bombs.push({x:s.x,y:s.y+sprH(s.spr)/2,vx:dx/len*bombVX,vy:bombSpd,winner:false,civil:false});
+          sfxBombDrop();
+        }
+      }
+      const bi=Math.max(18,Math.round(120-(aliens.length-totalAlive)*8.5));
+      bombTimer=rndI((bi*0.75)|0,bi);
+    }
+  }
+
+  if(state==='attack'){
+    const w=winner;
+    if(w&&w.alive&&frame%10===0&&ship.alive){
+      const dx=ship.x-w.x,dy=ship.y-w.y,len=Math.hypot(dx,dy);
+      bombs.push({x:w.x,y:w.y+sprH(w.spr)/2,vx:dx/len*8,vy:dy/len*8,winner:true,civil:false});
+      sfxWinnerBomb();
+    }
+  }
+
+  // move bombs + collisions
+  for(let i=bombs.length-1;i>=0;i--){
+    const b=bombs[i];b.x+=b.vx;b.y+=b.vy;
+    if(b.y>H+20||b.y<-20){bombs.splice(i,1);continue;}
+    if(!b.civil&&ship.alive&&!ship.invulnerable&&Math.hypot(b.x-ship.x,b.y-ship.y)<22){
+      if(b.winner){
+        bombs.splice(i,1);ship.alive=false;ship.exploding=true;ship.explodeT=0;
+        bigBoom(ship.x,ship.y);sfxShipExplode();
+        setTimeout(()=>{state='end';stateT=0;sfxFanfare();},1200);
+      } else {
+        bombs.splice(i,1);shipLives--;hitBoom(ship.x,ship.y);
+        if(shipLives<=0){
+          ship.alive=false;ship.exploding=true;ship.explodeT=0;
+          bigBoom(ship.x,ship.y);sfxShipExplode();bombs=[];
+          setTimeout(()=>{state='civil_war';stateT=0;civilWarTimer=1.5;civilWarKillInterval=1.2;civilWarDone=false;bombTimer=60;},1800);
+        } else {
+          ship.invulnerable=true;ship.invulnerableT=0;sfxShipHit();setTimeout(()=>sfxRespawn(),700);
+        }
+      }
+    } else if(!b.civil&&ship.invulnerable&&!b.winner&&Math.hypot(b.x-ship.x,b.y-ship.y)<22){
+      bombs.splice(i,1);
+    }
+  }
+
+  // player bullets
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];b.y-=b.sp;
+    if(b.y<-20){bullets.splice(i,1);continue;}
+    for(const a of aliens){
+      if(!a.alive||a===winner)continue;
+      if(Math.abs(b.x-a.x)<18&&Math.abs(b.y-a.y)<16){
+        a.alive=false;alienBoom(a.x,a.y,a.pal[1]);sfxAlienDie();score+=a.pts;bullets.splice(i,1);break;
+      }
+    }
+  }
+
+  if(state==='playing'&&ship.alive&&!winner){
+    const aliveNow=aliens.filter(a=>a.alive);
+    if(aliveNow.length===1){
+      winner=aliveNow[0];winner.winner=true;
+      state='last';stateT=0;setTimeout(()=>sfxWinnerReveal(),200);
+    }
+  }
+
+  if(state==='playing'&&ship.alive&&time>nextKill){
+    const a=getTarget();
+    if(a){
+      if(Math.abs(ship.x-a.x)<55||time>nextKill+0.2){
+        bullets.push({x:a.x,y:ship.y-18,sp:16});sfxShoot();killPtr++;nextKill=time+0.85;
+      }
+    }
+  }
+
+  if(state==='attack'){
+    const w=winner;
+    if(w&&w.alive){
+      // continuously steer toward ship so the dive never misses
+      const steerX=(ship.x-w.x)*0.04;
+      w.dvx=clamp(w.dvx+steerX,-12,12);
+      w.x+=w.dvx;w.y+=w.dvy;w.dvy=Math.min(w.dvy+0.12,12);
+      if(ship.alive&&Math.hypot(w.x-ship.x,w.y-ship.y)<28){
+        ship.alive=false;ship.exploding=true;ship.explodeT=0;
+        bigBoom(ship.x,ship.y);sfxShipExplode();w.alive=false;
+        setTimeout(()=>{state='end';stateT=0;sfxFanfare();},1200);
+      }
+      // if winner goes off bottom, loop from top and re-aim
+      if(w.y>H+60){w.x=clamp(w.x,-40,W+40);w.y=-50;w.dvx=(ship.x-w.x)*0.06;w.dvy=5;}
+    } else if(w&&!w.alive&&state==='attack'){
+      // winner already hit ship — end was already scheduled; nothing more to do
+    }
+  }
+
+  if(state==='last'&&stateT>0.8){
+    state='attack';stateT=0;
+    winner.dvx=(ship.x-winner.x)*0.06;winner.dvy=5;winner.diving=true;sfxWinnerDive();
+  }
+  // safety net: attack should complete within ~6s; if not (ship was already dead) skip to end
+  if(state==='attack'&&stateT>6&&!ship.alive){
+    state='end';stateT=0;sfxFanfare();
+  }
+
+  if(ship.exploding)ship.explodeT+=dt;
+}
+
+// ── draw ─────────────────────────────────────────────────────────
+function drawStars(){
+  for(const s of STARS){ctx.globalAlpha=0.4+0.6*Math.sin(time*1.2+s.t);ctx.fillStyle='#fff';ctx.fillRect(s.x,s.y,s.r,s.r);}
+  ctx.globalAlpha=1;
+}
+function drawSparks(){
+  for(const s of sparks){ctx.globalAlpha=Math.max(0,s.life);ctx.fillStyle=s.col;ctx.fillRect(s.x-s.sz/2,s.y-s.sz/2,s.sz,s.sz);}
+  ctx.globalAlpha=1;
+}
+function drawHUD(){
+  ctx.textAlign='left';ctx.font='bold 14px monospace';ctx.fillStyle='#FF2244';ctx.fillText('1UP',16,30);
+  ctx.textAlign='right';ctx.fillStyle='#fff';ctx.fillText(String(score).padStart(5,'0'),W-16,30);
+  ctx.textAlign='center';ctx.fillStyle='#FF2244';ctx.fillText(teamName,W/2,30);
+  for(let i=0;i<shipLives;i++)drawSprSmall(SPR_SHIP,PAL_SHIP,26+i*36,H-18);
+}
+function banner(txt,col,y){
+  ctx.textAlign='center';ctx.font='bold 10px monospace';ctx.fillStyle=col;ctx.shadowBlur=12;ctx.shadowColor=col;
+  ctx.fillText(txt,W/2,y||H-16);ctx.shadowBlur=0;
+}
+
+function draw(){
+  ctx.fillStyle='#000010';ctx.fillRect(0,0,W,H);
+  drawStars();
+  if(state==='title'){drawTitle();return;}
+  if(state==='end'){drawEnd();return;}
+
+  for(const a of aliens){
+    if(!a.alive)continue;
+    const isWin=a.winner&&(state==='last'||state==='attack');
+    if(isWin){ctx.shadowBlur=18;ctx.shadowColor=`hsl(${frame*5%360},100%,70%)`;}
+    const h=frame*5%360;
+    const pal=isWin?[null,`hsl(${h},80%,55%)`,`hsl(${(h+60)%360},100%,70%)`,`hsl(${(h+120)%360},100%,85%)`]:a.pal;
+    drawSpr(a.spr,pal,a.x|0,a.y|0);ctx.shadowBlur=0;
+    ctx.font='900 9px monospace';ctx.textAlign='center';
+    ctx.fillStyle=isWin?`hsl(${h},100%,85%)`:'#fff';
+    ctx.fillText(a.name.toUpperCase(),a.x|0,(a.y+sprH(a.spr)/2+11)|0);
+    if(isWin&&state==='last'&&Math.floor(frame/9)%2===0){
+      ctx.font='bold 8px monospace';ctx.fillStyle='#FFD700';ctx.shadowBlur=12;ctx.shadowColor='#FFD700';
+      ctx.fillText('★ WINNER! ★',a.x|0,(a.y-sprH(a.spr)/2-8)|0);ctx.shadowBlur=0;
+    }
+  }
+
+  ctx.fillStyle='#FFFF88';ctx.shadowBlur=6;ctx.shadowColor='#FFFF00';
+  for(const b of bullets)ctx.fillRect((b.x-1)|0,(b.y-7)|0,2,12);
+  ctx.shadowBlur=0;
+
+  for(const b of bombs){
+    if(b.winner){
+      ctx.fillStyle='#FF2200';ctx.shadowBlur=10;ctx.shadowColor='#FF4400';
+      ctx.beginPath();ctx.moveTo(b.x,b.y-7);ctx.lineTo(b.x+5,b.y);ctx.lineTo(b.x,b.y+7);ctx.lineTo(b.x-5,b.y);ctx.closePath();ctx.fill();
+    } else if(b.civil){
+      ctx.fillStyle='#FF6600';ctx.shadowBlur=6;ctx.shadowColor='#FF8800';ctx.fillRect((b.x-2)|0,(b.y-6)|0,4,12);
+    } else {
+      ctx.fillStyle='#FFFFAA';ctx.shadowBlur=4;ctx.shadowColor='#FFFF00';ctx.fillRect((b.x-2)|0,(b.y-5)|0,4,10);
+      ctx.fillStyle='#FF8800';ctx.fillRect((b.x-1)|0,(b.y-5)|0,2,3);
+    }
+    ctx.shadowBlur=0;
+  }
+
+  const showShip=ship.alive&&(!ship.invulnerable||Math.floor(frame/4)%2===0);
+  if(showShip)drawSpr(SPR_SHIP,PAL_SHIP,ship.x|0,ship.y|0);
+  if(ship.exploding&&Math.floor(frame/3)%2===0)drawSpr(SPR_SHIP,PAL_SHIP,ship.x|0,ship.y|0);
+  if(ship.alive&&Math.abs(shipVX)>1.5){ctx.globalAlpha=0.5;ctx.fillStyle='#FF6600';ctx.fillRect((ship.x-2)|0,ship.y+16,4,rnd(5,10)|0);ctx.globalAlpha=1;}
+
+  drawSparks();drawHUD();
+
+  if(state==='last'&&Math.floor(frame/11)%2===0) banner(`★ ${winner.name.toUpperCase()} IS THE LAST ONE STANDING! ★`,'#FFD700');
+  if(state==='attack'&&Math.floor(frame/9)%2===0) banner(`⚠  ${winner.name.toUpperCase()} ATTACKS!  ⚠`,'#FF2200');
+  if(state==='civil_war'&&Math.floor(frame/12)%2===0) banner('⚡  EVERY ALIEN FOR THEMSELVES!  ⚡','#FF6600');
+  if((state==='playing'||state==='last')&&ship.invulnerable&&Math.floor(frame/8)%2===0)
+    banner(`${shipLives} ${shipLives===1?'LIFE':'LIVES'} REMAINING`,'#FF4444');
+}
+
+function drawTitle(){
+  const ty=278+Math.sin(time*1.2)*8;
+  [[SPR_FLAG,PAL_FLAG,W/2-130],[SPR_BUTTER,PAL_BUTTER,W/2],[SPR_BEE,PAL_BEE,W/2+130]].forEach(([s,p,x])=>drawSpr(s,p,x|0,ty|0));
+  ctx.textAlign='center';
+  ctx.font='900 38px monospace';ctx.fillStyle='#FF2244';ctx.shadowBlur=32;ctx.shadowColor='#FF2244';
+  ctx.fillText(teamName,W/2,148);ctx.shadowBlur=0;
+  ctx.font='bold 11px monospace';ctx.fillStyle='#FFFF44';
+  ctx.fillText('ONLY ONE CAN LEAD US TOMORROW!',W/2,190);
+  if(Math.floor(frame/28)%2===0){
+    ctx.font='bold 11px monospace';ctx.fillStyle='#00FF88';ctx.shadowBlur=12;ctx.shadowColor='#00FF88';
+    ctx.fillText('CLICK TO START',W/2,430);ctx.shadowBlur=0;
+  }
+  ctx.font='bold 8px monospace';ctx.fillStyle='#445';
+  ctx.fillText('FULLY AUTOMATED — SIT BACK AND WATCH',W/2,452);
+}
+
+function drawEnd(){
+  ctx.fillStyle='rgba(0,0,0,0.82)';ctx.fillRect(0,0,W,H);
+  drawSparks();
+  const h=frame*4%360;
+  ctx.textAlign='center';
+  ctx.font='bold 18px monospace';ctx.fillStyle='#FFD700';ctx.shadowBlur=22;ctx.shadowColor='#FFD700';
+  ctx.fillText('★   WINNER   ★',W/2,115);ctx.shadowBlur=0;
+  ctx.font='bold 46px monospace';ctx.fillStyle=`hsl(${h},100%,68%)`;ctx.shadowBlur=26;ctx.shadowColor=`hsl(${h},100%,68%)`;
+  ctx.fillText(winner?winner.name.toUpperCase():'???',W/2,195);ctx.shadowBlur=0;
+  ctx.font='bold 10px monospace';ctx.fillStyle='#FF4488';ctx.fillText('WILL LEAD US TOMORROW!',W/2,232);
+  ctx.font='bold 9px monospace';ctx.fillStyle='#FFFF44';ctx.fillText(`SCORE: ${score}`,W/2,258);
+  if(winner){
+    const bPS=7,spr=winner.spr;
+    const bpal=[null,`hsl(${h},80%,55%)`,`hsl(${(h+60)%360},100%,70%)`,`hsl(${(h+120)%360},100%,85%)`];
+    const bx=(W-spr[0].length*bPS)/2,by=288;
+    for(let r=0;r<spr.length;r++)for(let c=0;c<spr[r].length;c++){const v=spr[r][c];if(!v)continue;ctx.fillStyle=bpal[v];ctx.fillRect(bx+c*bPS,by+r*bPS,bPS,bPS);}
+    ctx.font='bold 11px monospace';ctx.fillStyle=`hsl(${h},100%,85%)`;
+    ctx.fillText(winner.name.toUpperCase(),W/2,by+spr.length*bPS+16);
+  }
+  if(stateT>2.5&&Math.floor(frame/30)%2===0){
+    ctx.font='bold 9px monospace';ctx.fillStyle='#ffffff';
+    ctx.fillText('CLICK TO PLAY AGAIN',W/2,528);
+  }
+}
+
+// ── aliens panel ─────────────────────────────────────────────────
+let panelOpen=false;
+function togglePanel(){
+  panelOpen=!panelOpen;
+  document.getElementById('aliens-panel').classList.toggle('open',panelOpen);
+  if(panelOpen)renderNameList();
+}
+function renderNameList(){
+  const list=document.getElementById('name-list');list.innerHTML='';
+  TEAM.forEach((name,i)=>{
+    const row=document.createElement('div');row.className='name-row';
+    const inp=document.createElement('input');
+    inp.type='text';inp.value=name;inp.maxLength=14;
+    inp.addEventListener('change',()=>{const v=inp.value.trim().toUpperCase();if(v)TEAM[i]=v;else inp.value=TEAM[i];updatePanelMeta();});
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();});
+    const del=document.createElement('button');del.className='del-btn';del.textContent='✕';
+    del.onclick=()=>{TEAM.splice(i,1);renderNameList();};
+    row.appendChild(inp);row.appendChild(del);list.appendChild(row);
+  });
+  updatePanelMeta();
+}
+function updatePanelMeta(){
+  const n=TEAM.length;
+  document.getElementById('alien-count-badge').textContent=n;
+  const note=document.getElementById('panel-note');
+  note.innerHTML=n<1?'<span style="color:#FF4444">⚠ Add at least 1 name</span>':
+                 `<span style="color:#44FF88">✓ ${n} alien${n===1?'':'s'} ready</span>`;
+}
+function addAlienName(){
+  const inp=document.getElementById('new-name');
+  const v=inp.value.trim().toUpperCase();if(!v)return;
+  TEAM.push(v);inp.value='';renderNameList();
+  document.getElementById('name-list').scrollTop=999999;
+}
+// initialise panel
+document.getElementById('team-name-input').value=teamName;
+function updateTeamName(val){
+  const v=val.trim().toUpperCase();
+  if(v) teamName=v;
+  else document.getElementById('team-name-input').value=teamName;
+}
+function saveTeam(){
+  try{localStorage.setItem('sdt_team',JSON.stringify(TEAM));localStorage.setItem('sdt_name',teamName);}catch(e){}
+  // reset to title screen
+  stopBgRhythm();
+  aliens=[];bullets=[];bombs=[];sparks=[];
+  ship={alive:false,exploding:false};winner=null;
+  state='title';stateT=0;frame=0;time=0;
+  // visual feedback on button
+  const btn=document.getElementById('save-btn');
+  btn.textContent='✓ SAVED!';btn.style.background='#0f3a1f';btn.style.borderColor='#00FF66';btn.style.color='#00FF66';
+  setTimeout(()=>{btn.textContent='SAVE & RESTART';btn.style.background='';btn.style.borderColor='';btn.style.color='';},1800);
+}
+renderNameList();
+
+// ── input ────────────────────────────────────────────────────────
+function onInteract(e){
+  if(e.target&&e.target.closest&&e.target.closest('#aliens-panel'))return;
+  initAudio();
+  if(state==='title')initGame();
+  else if(state==='end'&&stateT>2.5)initGame();
+}
+window.addEventListener('click',onInteract);
+window.addEventListener('keydown',onInteract);
+
+// ── loop ─────────────────────────────────────────────────────────
+let lastTS=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTS)/1000,0.05);lastTS=ts;
+  update(dt);draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

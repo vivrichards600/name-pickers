@@ -32,12 +32,10 @@ Then just double-click any `.html` file, or open it via `File > Open` in your br
 | App | Live Demo | Description |
 |-----|-----------|-------------|
 | `kong-barrels-picker.html` | [Try it](https://ahmedh00.github.io/name-pickers/kong-barrels-picker.html) | Inspired by Donkey Kong - first barrel to reach the bottom wins |
+| `defender.html` | [Try it](https://ahmedh00.github.io/name-pickers/defender.html) | Inspired by Defender - last survivor wins |
+| `galaxians.html` | [Try it](https://ahmedh00.github.io/name-pickers/defender.html) | Inspired by Galaxians - last alien ship wins |
+| `pong.html` | [Try it](https://ahmedh00.github.io/name-pickers/defender.html) | Inspired by Atari Pong - last ball wins |
 
-## Screenshots
-
-
-### `kong-barrels-picker.html`
-![kong barrels screenshot](./screenshots/kong-barrels-picker.png)
 
 ## Contributing
 
@@ -45,9 +43,8 @@ Adding a new picker:
 
 1. Build it as a single `.html` file — vanilla JS, inline CSS, no external dependencies
 2. Give it a clear, descriptive filename
-3. Drop a screenshot in `/screenshots`
-4. Add a row to the Apps table above
-5. Open a PR
+3. Add a row to the Apps table above
+4. Open a PR
 
 ## Setting up GitHub Pages
 

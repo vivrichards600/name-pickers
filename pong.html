@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pong Name Picker</title>
+    <style>
+        :root {
+            --bg-color: #000;
+            --primary-color: #fff;
+            --accent-color: #0f0;
+        }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--primary-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 0 #444;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+        }
+        .sidebar {
+            flex: 1;
+            background: #111;
+            padding: 20px;
+            border: 2px solid var(--primary-color);
+            border-radius: 8px;
+        }
+        .game-area {
+            flex: 3;
+            position: relative;
+        }
+        canvas {
+            background: #000;
+            border: 4px solid var(--primary-color);
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #000;
+            color: var(--accent-color);
+            border: 1px solid var(--primary-color);
+            font-family: inherit;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background: var(--primary-color);
+            color: var(--bg-color);
+            border: none;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: var(--accent-color);
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: #222;
+            margin-bottom: 5px;
+            border: 1px solid #444;
+        }
+        .remove-btn {
+            width: auto;
+            margin: 0;
+            padding: 4px 8px;
+            background: #f00;
+            color: #fff;
+            font-size: 12px;
+        }
+        .remove-btn:hover {
+            background: #c00;
+        }
+        #winnerOverlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            text-align: center;
+        }
+        #winnerName {
+            font-size: 48px;
+            color: var(--accent-color);
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Pong Picker</h1>
+    
+    <div class="container">
+        <div class="sidebar">
+            <input type="text" id="nameInput" placeholder="Enter participant name..." autocomplete="off">
+            <button id="addBtn">Add Name</button>
+            <ul id="nameList"></ul>
+            <hr style="border-color: #444; margin: 20px 0;">
+            <button id="startBtn">Start Game</button>
+        </div>
+
+        <div class="game-area">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div id="winnerOverlay">
+                <div style="font-size: 24px;">WINNER</div>
+                <div id="winnerName">Name</div>
+                <button id="resetBtn" style="width: 200px;">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- UI Elements ---
+    const nameInput = document.getElementById('nameInput');
+    const addBtn = document.getElementById('addBtn');
+    const nameList = document.getElementById('nameList');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const winnerOverlay = document.getElementById('winnerOverlay');
+    const winnerNameEl = document.getElementById('winnerName');
+    
+    // --- Canvas & Context ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- State ---
+    let participants = [];
+    let balls = [];
+    let paddles = [];
+    let isPlaying = false;
+    let animationId;
+    let startTime = 0;
+    let lastWinner = null;
+
+    // --- Audio Context (Created on user interaction) ---
+    let audioCtx;
+    function playSound(type) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        if (type === 'hit') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'miss') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+        } else if (type === 'win') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(554, audioCtx.currentTime + 0.1);
+            osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.2);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.6);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.6);
+        }
+    }
+
+    // --- Logic: Name Management ---
+    function updateList() {
+        nameList.innerHTML = '';
+        participants.forEach((name, index) => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            const rmBtn = document.createElement('button');
+            rmBtn.textContent = 'X';
+            rmBtn.className = 'remove-btn';
+            rmBtn.onclick = () => {
+                participants.splice(index, 1);
+                updateList();
+            };
+            li.appendChild(rmBtn);
+            nameList.appendChild(li);
+        });
+    }
+
+    function addName() {
+        const val = nameInput.value.trim();
+        if (val) {
+            participants.push(val);
+            nameInput.value = '';
+            updateList();
+        }
+    }
+
+    addBtn.addEventListener('click', addName);
+    nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') addName(); });
+
+    // --- Game Classes ---
+    class Paddle {
+        constructor(isLeft) {
+            this.isLeft = isLeft;
+            this.width = 15;
+            this.height = 100;
+            this.x = isLeft ? 30 : canvas.width - 30 - this.width;
+            this.y = canvas.height / 2 - this.height / 2;
+            this.baseSpeed = 5; 
+        }
+
+        update(balls) {
+            // Find the closest ball moving towards this paddle
+            let targetBall = null;
+            let minDist = Infinity;
+
+            for (let b of balls) {
+                if ((this.isLeft && b.vx < 0) || (!this.isLeft && b.vx > 0)) {
+                    let dist = Math.abs(b.x - this.x);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        targetBall = b;
+                    }
+                }
+            }
+
+            // Move towards the target ball
+            if (targetBall) {
+                const center = this.y + this.height / 2;
+                if (center < targetBall.y - this.baseSpeed) {
+                    this.y += this.baseSpeed;
+                } else if (center > targetBall.y + this.baseSpeed) {
+                    this.y -= this.baseSpeed;
+                } else {
+                    this.y = targetBall.y - this.height / 2;
+                }
+            }
+
+            // Clamp to screen
+            if (this.y < 0) this.y = 0;
+            if (this.y + this.height > canvas.height) this.y = canvas.height - this.height;
+        }
+
+        draw(ctx) {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+
+    class Ball {
+        constructor(name) {
+            this.name = name;
+            this.size = 10;
+            this.x = canvas.width / 2;
+            this.y = canvas.height / 2;
+            
+            // Randomize starting directions and speeds
+            const angle = (Math.random() * Math.PI / 2) - Math.PI / 4; // -45 to 45 deg
+            const speed = 2 + Math.random() * 1;
+            const dirX = Math.random() > 0.5 ? 1 : -1;
+            
+            this.vx = Math.cos(angle) * speed * dirX;
+            this.vy = Math.sin(angle) * speed;
+            this.active = true;
+
+            // Give each ball a random color to differentiate names
+            const hue = Math.floor(Math.random() * 360);
+            this.color = `hsl(${hue}, 100%, 70%)`;
+        }
+
+        update(speedMultiplier) {
+            if (!this.active) return;
+
+            // Apply incremental speed
+            this.x += this.vx * speedMultiplier;
+            this.y += this.vy * speedMultiplier;
+
+            // Top and Bottom walls
+            if (this.y <= 0 || this.y + this.size >= canvas.height) {
+                this.vy *= -1;
+                this.y = this.y <= 0 ? 0 : canvas.height - this.size;
+            }
+        }
+
+        draw(ctx) {
+            if (!this.active) return;
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+            
+            // Draw Name
+            ctx.fillStyle = '#fff';
+            ctx.font = '18px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.name, this.x + this.size/2, this.y - 8);
+        }
+    }
+
+    // --- Main Game Loop ---
+    function initGame() {
+        if (participants.length < 2) {
+            alert("Please add at least 2 participants.");
+            return;
+        }
+
+        balls = participants.map(name => new Ball(name));
+        paddles = [new Paddle(true), new Paddle(false)];
+        startTime = Date.now();
+        isPlaying = true;
+        winnerOverlay.style.display = 'none';
+
+        // Play silent sound to init Audio Context on user gesture
+        playSound('hit');
+
+        cancelAnimationFrame(animationId);
+        gameLoop();
+    }
+
+    function gameLoop() {
+        if (!isPlaying) return;
+
+        // Calculate speed multiplier based on elapsed time
+        // E.g., over 20 seconds, max speed scales up wildly.
+        const elapsed = (Date.now() - startTime) / 1000; 
+        const speedMultiplier = 1 + (elapsed / 15); // Increases by 1x every 15 seconds
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw center dashed line
+        ctx.strokeStyle = '#333';
+        ctx.setLineDash([10, 15]);
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Update and draw paddles
+        const activeBalls = balls.filter(b => b.active);
+        paddles.forEach(p => {
+            p.update(activeBalls);
+            p.draw(ctx);
+        });
+
+        // Update and draw balls, check collisions
+        activeBalls.forEach(b => {
+            b.update(speedMultiplier);
+
+            // Check Left Paddle Collision
+            if (b.vx < 0 && b.x <= paddles[0].x + paddles[0].width && b.x + b.size >= paddles[0].x) {
+                if (b.y + b.size >= paddles[0].y && b.y <= paddles[0].y + paddles[0].height) {
+                    b.vx *= -1;
+                    b.x = paddles[0].x + paddles[0].width; // Fix sticking
+                    playSound('hit');
+                }
+            }
+            // Check Right Paddle Collision
+            else if (b.vx > 0 && b.x + b.size >= paddles[1].x && b.x <= paddles[1].x + paddles[1].width) {
+                if (b.y + b.size >= paddles[1].y && b.y <= paddles[1].y + paddles[1].height) {
+                    b.vx *= -1;
+                    b.x = paddles[1].x - b.size; // Fix sticking
+                    playSound('hit');
+                }
+            }
+
+            // Check Elimination (Missed the bat entirely)
+            if (b.x < 0 || b.x > canvas.width) {
+                b.active = false;
+                lastWinner = b.name; // In case they all eliminate simultaneously
+                playSound('miss');
+            }
+
+            b.draw(ctx);
+        });
+
+        // Check Win Condition
+        const remaining = balls.filter(b => b.active);
+        if (remaining.length === 1) {
+            endGame(remaining[0].name);
+        } else if (remaining.length === 0) {
+            // Tie breaker fallback if last balls fly off simultaneously
+            endGame(lastWinner || "No one");
+        } else {
+            animationId = requestAnimationFrame(gameLoop);
+        }
+    }
+
+    function endGame(winnerName) {
+        isPlaying = false;
+        playSound('win');
+        winnerNameEl.textContent = winnerName;
+        winnerOverlay.style.display = 'flex';
+    }
+
+    startBtn.addEventListener('click', initGame);
+    resetBtn.addEventListener('click', initGame);
+
+    // Initial canvas render
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#555';
+    ctx.font = '24px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText("Add names and click Start Game", canvas.width/2, canvas.height/2);
+
+</script>
+</body>
+</html>
