@@ -37,7 +37,7 @@ Then just double-click any `.html` file, or open it via `File > Open` in your br
 | `pong.html` | [Try it](https://ahmedh00.github.io/name-pickers/pong.html) | Inspired by Atari Pong - last ball wins |
 | `pick-man.html` | [Try it](https://ahmedh00.github.io/name-pickers/pick-man.html) | Inspired by Pacman - first ghost to capture Pacman wins |
 | `frogger.html` | [Try it](https://ahmedh00.github.io/name-pickers/frogger.html) | Inspired by Frogger - first frog to the end wins |
-| `super-kart.html` | [Try it](https://ahmedh00.github.io/name-pickers/pick-man.html) | Inspired by Super Mario Kart - last kart to finish wins |
+| `super-kart.html` | [Try it](https://ahmedh00.github.io/name-pickers/super-kart.html) | Inspired by Super Mario Kart - last kart to finish wins |
 
 
 ## Contributing
